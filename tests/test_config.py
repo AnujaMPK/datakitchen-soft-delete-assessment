@@ -54,6 +54,7 @@ def test_missing_config_file_raises_config_error(tmp_path):
     with pytest.raises(ConfigError, match="not found"):
         load_config(tmp_path / "does-not-exist.yaml")
 
+
 def test_soft_delete_without_primary_keys_is_rejected():
     raw = {
         "layer": "marts",
@@ -68,6 +69,7 @@ def test_soft_delete_without_primary_keys_is_rejected():
 
     with pytest.raises(ValueError, match="primary_key"):
         ModelConfig(**raw)
+
 
 def test_soft_delete_without_marker_columns_is_rejected():
     raw = {
