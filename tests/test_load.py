@@ -9,6 +9,14 @@ load mode.
 from __future__ import annotations
 
 import pytest
+from pyspark.sql.types import (
+    BooleanType,
+    IntegerType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
 
 from engine.config.enums import LoadMode
 from engine.load import get_loader
@@ -50,9 +58,9 @@ def seeded_target(spark, delta_path):
 def test_full_compare_inserts_updates_and_deletes(spark, seeded_target):
     source = spark.createDataFrame(
         [
-            (1, "alice@x.com", "NL"),  # unchanged
-            (2, "bob@new.com", "BE"),  # updated
-            (4, "dave@x.com", "DE"),  # new — row 3 is absent
+            (1, "alice@x.com", "NL"),
+            (2, "bob@new.com", "BE"),
+            (4, "dave@x.com", "DE"),
         ],
         ["customer_id", "email", "country"],
     )
@@ -79,3 +87,91 @@ def test_full_compare_is_idempotent(spark, seeded_target):
     loader.run(source, seeded_target)
 
     assert _read(spark, seeded_target).count() == 3
+
+
+@pytest.fixture
+def soft_delete_target(spark, delta_path):
+    """Seed the target Delta table with soft-delete columns."""
+    schema = StructType(
+        [
+            StructField("customer_id", IntegerType(), False),
+            StructField("email", StringType(), True),
+            StructField("country", StringType(), True),
+            StructField("is_active", BooleanType(), False),
+            StructField("deleted_at", TimestampType(), True),
+        ]
+    )
+
+    seed = spark.createDataFrame(
+        [
+            (1, "alice@x.com", "NL", True, None),
+            (2, "bob@x.com", "BE", True, None),
+            (3, "carol@x.com", "NL", True, None),
+        ],
+        schema,
+    )
+    seed.write.format("delta").save(delta_path)
+    return delta_path
+
+
+def test_soft_delete_inserts_updates_and_marks_missing_inactive(
+    spark, soft_delete_target
+):
+    source = spark.createDataFrame(
+        [
+            (1, "alice@x.com", "NL"),
+            (2, "bob@new.com", "BE"),
+            (4, "dave@x.com", "DE"),
+        ],
+        ["customer_id", "email", "country"],
+    )
+
+    loader = get_loader(LoadMode.SOFT_DELETE, primary_keys=["customer_id"])
+    loader.run(source, soft_delete_target)
+
+    result = _read(spark, soft_delete_target)
+
+    assert _rows(
+        result.select("customer_id", "email", "country", "is_active"),
+        "customer_id",
+        "email",
+        "country",
+        "is_active",
+    ) == [
+        (1, "alice@x.com", "NL", True),
+        (2, "bob@new.com", "BE", True),
+        (3, "carol@x.com", "NL", False),
+        (4, "dave@x.com", "DE", True),
+    ]
+
+    deleted_row = result.where("customer_id = 3").collect()[0]
+    assert deleted_row["deleted_at"] is not None
+
+
+def test_soft_delete_restores_reappeared_row(spark, soft_delete_target):
+    loader = get_loader(LoadMode.SOFT_DELETE, primary_keys=["customer_id"])
+
+    first_source = spark.createDataFrame(
+        [
+            (1, "alice@x.com", "NL"),
+            (2, "bob@x.com", "BE"),
+        ],
+        ["customer_id", "email", "country"],
+    )
+    loader.run(first_source, soft_delete_target)
+
+    second_source = spark.createDataFrame(
+        [
+            (1, "alice@x.com", "NL"),
+            (2, "bob@x.com", "BE"),
+            (3, "carol@restored.com", "NL"),
+        ],
+        ["customer_id", "email", "country"],
+    )
+    loader.run(second_source, soft_delete_target)
+
+    row = _read(spark, soft_delete_target).where("customer_id = 3").collect()[0]
+
+    assert row["email"] == "carol@restored.com"
+    assert row["is_active"] is True
+    assert row["deleted_at"] is None

@@ -13,11 +13,14 @@ class LoadMode(StrEnum):
 
     FULL = "full"
     FULL_COMPARE = "full_compare"
+    SOFT_DELETE = "soft_delete"
 
 
 class Layer(StrEnum):
     """Medallion layer a model belongs to."""
 
+    STAGING = "staging"
+    MARTS = "marts"
     BRONZE = "bronze"
     SILVER = "silver"
     GOLD = "gold"

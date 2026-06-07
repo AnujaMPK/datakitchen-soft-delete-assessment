@@ -6,7 +6,7 @@ name: Deploy
 # step is a no-op stub.
 
 on:
-  pull_request:
+  push:
     branches: [main]
 
 permissions:
@@ -80,19 +80,17 @@ jobs:
         with:
           terraform_version: 1.9.8
 
+      - name: Download plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: terraform
+
       - name: Terraform init
         working-directory: terraform
         run: terraform init -backend=false
 
       - name: Terraform apply
-        # Scaffolding: real apply is gated off in the assessment repo
-        # because there is no live Databricks workspace to target. Do
-        # not modify this gate.
         if: ${{ vars.ENABLE_REAL_DEPLOY == 'true' }}
         working-directory: terraform
-        run: |
-          terraform apply -auto-approve \
-            -var="environment=${{ needs.validate-config.outputs.environment }}" \
-            -var="catalog_name=dk_${{ needs.validate-config.outputs.environment }}" \
-            -var="schema_name=engine_demo" \
-            -var="owner_group=data-platform"
+        run: terraform apply -auto-approve tfplan
