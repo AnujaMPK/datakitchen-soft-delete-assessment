@@ -81,13 +81,30 @@ class ModelConfig(ConfigBaseModel):
     def _validate_mode_requirements(self) -> ModelConfig:
         """Cross-field validation for load modes that have extra rules.
 
-        ``full_compare`` can only produce correct results if it has at
-        least one primary key to match source rows against target rows.
+        ``full_compare`` and ``soft_delete`` can only produce correct results
+        if they have at least one primary key to match source rows against
+        target rows.
         """
-        if self.refresh.mode == LoadMode.FULL_COMPARE and not self.primary_keys:
+        if (
+            self.refresh.mode in {LoadMode.FULL_COMPARE, LoadMode.SOFT_DELETE}
+            and not self.primary_keys
+        ):
             msg = (
-                "Load mode 'full_compare' requires at least one column "
+                f"Load mode '{self.refresh.mode}' requires at least one column "
                 "marked primary_key: true."
             )
             raise ValueError(msg)
+
+        if self.refresh.mode == LoadMode.SOFT_DELETE:
+            column_names = {column.name for column in self.columns}
+            missing_columns = {"is_active", "deleted_at"} - column_names
+
+            if missing_columns:
+                msg = (
+                    "Load mode 'soft_delete' requires columns "
+                    "'is_active' and 'deleted_at'. Missing: "
+                    f"{', '.join(sorted(missing_columns))}."
+                )
+                raise ValueError(msg)
+
         return self

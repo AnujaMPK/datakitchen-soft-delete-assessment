@@ -53,3 +53,31 @@ def test_unknown_field_is_rejected():
 def test_missing_config_file_raises_config_error(tmp_path):
     with pytest.raises(ConfigError, match="not found"):
         load_config(tmp_path / "does-not-exist.yaml")
+
+def test_soft_delete_without_primary_keys_is_rejected():
+    raw = {
+        "layer": "marts",
+        "name": "soft_delete_without_keys",
+        "refresh": {"mode": "soft_delete"},
+        "columns": [
+            {"name": "customer_id", "data_type": "int"},
+            {"name": "is_active", "data_type": "boolean"},
+            {"name": "deleted_at", "data_type": "timestamp"},
+        ],
+    }
+
+    with pytest.raises(ValueError, match="primary_key"):
+        ModelConfig(**raw)
+
+def test_soft_delete_without_marker_columns_is_rejected():
+    raw = {
+        "layer": "marts",
+        "name": "soft_delete_without_markers",
+        "refresh": {"mode": "soft_delete"},
+        "columns": [
+            {"name": "customer_id", "data_type": "int", "primary_key": True},
+        ],
+    }
+
+    with pytest.raises(ValueError, match="is_active"):
+        ModelConfig(**raw)
