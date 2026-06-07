@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from delta.tables import DeltaTable
 from pyspark.sql.column import Column
+
 from engine.errors import LoadError
 
 if TYPE_CHECKING:
